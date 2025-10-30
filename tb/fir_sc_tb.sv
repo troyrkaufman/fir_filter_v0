@@ -46,6 +46,7 @@ module fir_tb;
   logic signed [15:0] x     [0:2047];       // enough headroom
   // Expected decimated outputs
   logic signed [31:0] y_ref [0:1023];
+  logic signed [47:0] debug_sample;
   
         int exp_i = 0;
       int act_i =0;
@@ -56,14 +57,16 @@ module fir_tb;
   function automatic int abs_int(input int v);
     return (v < 0) ? -v : v;
   endfunction
-
   // Behavioral FIR reference model that accesses globals directly.
   // Computes y[n] = sum_k x[n-k] * coef[k], no bounds underflow.
   function automatic signed [31:0] fir_model_idx(input int n);
     logic signed [47:0] acc; acc = 0;
+    debug_sample = 0;
     for (int k = 0; k < TAP_COUNT; k++) begin
-      if (n - k >= 0)
+      if (n - k >= 0) begin 
         acc += x[n - k] * coef[k];
+        debug_sample = x[n-k];
+      end  
     end
     // DUT does >>> 15; keep identical scaling here
     return acc >>> 15;
@@ -81,7 +84,6 @@ module fir_tb;
     s_tdata  = '0;
 
     // Place fir_coe.txt in the sim working dir, or give a RELATIVE path here.
-    // Use plain decimal values or hex without 0x, one per line.
     $readmemh("fir_coe.txt", coef);
 
     // Simple impulse stimulus
@@ -106,10 +108,6 @@ module fir_tb;
     @(posedge clk);
 
     // ===== Stream the input with proper AXIS timing =====
-    // For each sample n:
-    //  - Assert TVALID and present data.
-    //  - Hold TVALID high until we observe a rising-edge where TREADY==1.
-    //  - Then proceed to next sample.
     for (int n = 0; n < 1024; n++) begin
       s_tvalid <= 1'b1;
       @(posedge clk);
@@ -117,11 +115,7 @@ module fir_tb;
       for (int ch = 0; ch < CHANNELS; ch++)
         s_tdata[ch*DW +: DW] <= x[n];
 
-      // wait until a rising edge occurs with s_tready==1
-      // (if s_tready is already 1, the very next posedge will transfer)
       do @(posedge clk); while (!s_tready);
-      // handshake happened on this edge with TVALID=1 and TREADY=1
-      // advance to next n in the loop (TVALID remains 1 for continuous streaming)
     end
 
     // Deassert after last word
@@ -145,7 +139,9 @@ module fir_tb;
        exp_i = y_ref[out_idx];
        act_i = m_tdata;
        diff  = act_i - exp_i;
-
+        
+        $display("Compare Samples: Expected sample: %0d; Observed sample: %0d", debug_sample, dut.samples[0]);
+        
       if (abs_int(diff) > 3)
         $display("[FAIL] n=%0d exp=%0d got=%0d diff=%0d",
                  out_idx, exp_i, act_i, diff);
