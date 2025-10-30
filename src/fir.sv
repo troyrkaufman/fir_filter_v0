@@ -10,7 +10,7 @@
 `timescale 1ns/1ps
 
 module fir #(
-    parameter int TAP_COUNT   = 120,
+    parameter int TAP_COUNT   = 121,
     parameter int DATA_WIDTH  = 16,
     parameter int COEF_WIDTH  = 16,
     parameter int DECIM       = 8,
@@ -30,16 +30,15 @@ module fir #(
     logic [2:0] decim_count;
     logic signed [DATA_WIDTH-1:0] samples [0:TAP_COUNT-1];
     logic signed [COEF_WIDTH-1:0] coeffs  [0:TAP_COUNT-1];
-    logic signed [31:0] acc;
+    logic signed [47:0] acc;
 
     // === Load coefficients ===
     initial begin
         $display("Loading coefficients...");
         $readmemh("fir_coe.txt", coeffs);
-//        for (int i = 0; i < 8; i++)
-//            $display("coeff[%0d] = %0d", i, coeffs[i]);
+        for (int i = 0; i < 8; i++)
+            $display("coeff[%0d] = %0d", i, coeffs[i]);
     end 
-
 
     // === Ready/Valid handshake ===
     always_ff @(posedge clk) begin
@@ -62,17 +61,8 @@ always_ff @(posedge clk) begin
     if (!nrst) begin
         foreach (samples[i])
             samples[i] <= '0;
-        ch_sum <= '0;
     end else if (enable_fir) begin
-        // unpack each 16-bit slice and sum
-        for (int c = 0; c < CHANNELS; c++) begin
-            ch[c] = $signed(s_tdata[c*DATA_WIDTH +: DATA_WIDTH]);
-            ch_sum += ch[c];
-        end
-
-        // divide by 16 (shift right by 4) to keep Q1.15 scaling
-        samples[0] <= ch_sum >>> 4;
-
+        samples[0] <= $signed(s_tdata[15:0]);  // only use lane 0 for now  
         // shift previous samples down the delay line
         for (int i = 1; i < TAP_COUNT; i++)
             samples[i] <= samples[i-1];
@@ -96,6 +86,7 @@ end
             if (decim_count == DECIM-1) begin
                 decim_count <= 0;
                 m_tvalid <= 1'b1;
+                //$display("Observed acc: %0d", acc); 
                 m_tdata <= acc >>> 15; // scale (approx fixed-point normalization)
             end else begin
                 decim_count <= decim_count + 1;
@@ -103,5 +94,5 @@ end
             end
         end
     end
-
+  
 endmodule

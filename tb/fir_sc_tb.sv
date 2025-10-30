@@ -5,7 +5,7 @@ module fir_tb;
   // ===== Parameters (match DUT) =====
   localparam int CHANNELS   = 16;
   localparam int DW         = 16;
-  localparam int TAP_COUNT  = 120;
+  localparam int TAP_COUNT  = 121;
   localparam int COEFW      = 16;
   localparam int DECIM      = 8;
   localparam int CLK_PER    = 10;   // 100 MHz
@@ -65,6 +65,7 @@ module fir_tb;
     for (int k = 0; k < TAP_COUNT; k++) begin
       if (n - k >= 0) begin 
         acc += x[n - k] * coef[k];
+        //$display("Expected acc: %0d", $signed(acc));
         debug_sample = x[n-k];
       end  
     end
@@ -85,7 +86,11 @@ module fir_tb;
 
     // Place fir_coe.txt in the sim working dir, or give a RELATIVE path here.
     $readmemh("fir_coe.txt", coef);
-
+    
+    /*for (int i = 0; i < 16; i++) begin
+            $display("Expected coeff[%0d] = %0d", i, coef[i]);
+    end 
+    */
     // Simple impulse stimulus
     for (int n = 0; n < 2048; n++)
       x[n] = (n == 0) ? 16'sh7FFF : 16'sd0;
@@ -140,7 +145,7 @@ module fir_tb;
        act_i = m_tdata;
        diff  = act_i - exp_i;
         
-        $display("Compare Samples: Expected sample: %0d; Observed sample: %0d", debug_sample, dut.samples[0]);
+        //$display("Compare Samples: Expected sample: %0d; Observed sample: %0d", debug_sample, dut.samples[0]);
         
       if (abs_int(diff) > 3)
         $display("[FAIL] n=%0d exp=%0d got=%0d diff=%0d",
