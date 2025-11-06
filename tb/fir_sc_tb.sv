@@ -1,3 +1,5 @@
+
+
 `timescale 1ns/1ps
 
 module fir_tb;
@@ -48,7 +50,7 @@ module fir_tb;
   logic signed [31:0] y_ref [0:1023];
   logic signed [47:0] debug_sample;
   
-        int exp_i = 0;
+      int exp_i = 0;
       int act_i =0;
       int diff  = 0;
 
@@ -65,18 +67,15 @@ module fir_tb;
     for (int k = 0; k < TAP_COUNT; k++) begin
       if (n - k >= 0) begin 
         acc += x[n - k] * coef[k];
-        //$display("Expected acc: %0d", $signed(acc));
-        debug_sample = x[n-k];
       end  
     end
-    // DUT does >>> 15; keep identical scaling here
     return acc >>> 15;
   endfunction
 
   // ===== Output logging & compare state =====
   integer f_out;
   int     out_idx = 0;          // counts decimated outputs seen
-
+  int debug_n;
   // ===== Reset & init =====
   initial begin
     clk      = 0;
@@ -86,18 +85,14 @@ module fir_tb;
 
     // Place fir_coe.txt in the sim working dir, or give a RELATIVE path here.
     $readmemh("fir_coe.txt", coef);
-    
-    /*for (int i = 0; i < 16; i++) begin
-            $display("Expected coeff[%0d] = %0d", i, coef[i]);
-    end 
-    */
     // Simple impulse stimulus
-    for (int n = 0; n < 2048; n++)
+    for (int n = 0; n < 2048; n++) begin 
       x[n] = (n == 0) ? 16'sh7FFF : 16'sd0;
-
+      end
+      
     // Precompute expected decimated outputs
     for (int n = 0; n < 1024; n++)
-      y_ref[n] = fir_model_idx(n * DECIM + (DECIM-1));
+      y_ref[n] = fir_model_idx(n * DECIM + (DECIM - 1));
 
     // Open log
     f_out = $fopen("fir_output.txt", "w");
@@ -113,20 +108,37 @@ module fir_tb;
     @(posedge clk);
 
     // ===== Stream the input with proper AXIS timing =====
-    for (int n = 0; n < 1024; n++) begin
+    /*for (int n = 0; n < 1024; n++) begin
       s_tvalid <= 1'b1;
       @(posedge clk);
       // present data BEFORE the handshake edge
-      for (int ch = 0; ch < CHANNELS; ch++)
-        s_tdata[ch*DW +: DW] <= x[n];
+      //for (int ch = 0; ch < CHANNELS; ch++)
+        //s_tdata[ch*DW +: DW] <= x[n];
+        s_tdata[0] <= 16'h7fff;
+        @(posedge clk); 
+        s_tdata[0] <= 16'h0;
 
-      do @(posedge clk); while (!s_tready);
+      while (!s_tready);
     end
-
+    */
+    s_tvalid <= 1;
+    //repeat (255) begin 
+    @(posedge clk);
+    s_tdata[255:240] <= 16'h7fff;
+    //
+    //end
+    @(posedge clk);
+    s_tdata <= '0;
     // Deassert after last word
     @(posedge clk);
-    s_tvalid <= 1'b0;
+    s_tvalid <= 1'b1;
     s_tdata  <= '0;
+    
+    // subsequent clocks: zeros
+    for (int n = 0; n < 1000; n++) begin
+      s_tdata <= '0;
+      @(posedge clk);
+    end
 
     // Let the pipeline drain a bit
     repeat (100) @(posedge clk);
