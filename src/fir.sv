@@ -28,7 +28,7 @@ module fir #(
     output logic signed [31:0]          m_tdata        // combined output (CH0+CH1)
 );
 
-    // === Internal Signals ===
+    // Internal Signals
     logic enable_fir;
     logic pos_enable_fir, delay0;
     logic [2:0] decim_count;
@@ -43,13 +43,13 @@ module fir #(
     // Accumulators
     logic signed [47:0] acc0, acc1;
 
-    // === Load coefficients from file ===
+    // Load coefficients from file
     initial begin
         $display("Loading FIR coefficients...");
         $readmemh("fir_coe.txt", coeffs);
     end
 
-    // === Ready/Valid handshake ===
+    // Ready/Valid handshake
     always_ff @(posedge clk) begin
         if (!nrst) begin
             s_tready   <= 1'b0;
@@ -60,7 +60,7 @@ module fir #(
         end
     end
     logic delay1;
-    // === Detect rising edge of enable_fir ===
+    // Detect rising edge of enable_fir
     always_ff @(posedge clk) begin
         if (!nrst) begin
             delay0 <= 0;
@@ -73,7 +73,7 @@ module fir #(
 
     assign pos_enable_fir = delay0 && !delay1;
 
-    // === Delay line shift and load ===
+    // Delay line shift and load
     always_ff @(posedge clk) begin
         if (!nrst) begin
             for (int i = 0; i < TAP_COUNT; i++) begin
@@ -82,7 +82,7 @@ module fir #(
             end
         end
         else if (enable_fir) begin
-            for (int i = TAP_COUNT-1; i >= P_SAMPLES; i--) begin
+            for (int i = TAP_COUNT-1; i >= 1; i--) begin
                 taps0[i] <= taps0[i - P_SAMPLES];
                 taps1[i] <= taps1[i - P_SAMPLES];
             end
@@ -90,7 +90,7 @@ module fir #(
             // Load new parallel samples
             for (int j = 0; j < P_SAMPLES; j++) begin
                 taps0[j] <= $signed(s_tdata[16*j +: 16]);
-                taps1[j] <= $signed(s_tdata[128 + 16*j +: 16]);
+                taps1[j] <= $signed(s_tdata[(P_SAMPLES*DATA_WIDTH) + 16*j +: 16]);
             end
     end
     end
@@ -100,7 +100,7 @@ module fir #(
 
     logic signed [32:0] debug_mult;
     
-    // === Multiply-Accumulate (MAC) and Decimation ===
+    // Multiply-Accumulate (MAC) and Decimation
     always_ff @(posedge clk) begin
         if (!nrst) begin
             acc0        <= '0;
@@ -122,28 +122,5 @@ module fir #(
             m_tdata <= $signed(temp_acc0 >>> 15) + $signed(temp_acc1 >>> 15);
        end else 
             m_tvalid <= 0;
-           
-            /*
-            // Decimation control
-            if ( pos_enable_fir || (decim_count == 'd7)) begin
-                decim_count <= 0;
-                m_tvalid <= 1'b1;
-                m_tdata  <= $signed(temp_acc0 >>> 15) + $signed(temp_acc1 >>> 15);
-            end else begin
-                decim_count <= decim_count + 1;
-                m_tvalid <= 1'b0;
-            end
-            */
     end
- /*   
-    int blocks = 0;
-     int pos = -1;
-always_ff @(posedge clk) if (s_tvalid && s_tready) begin
-  blocks++;
-  for (int i = 0; i < TAP_COUNT; i++)
-    if (taps1[i] == 16'sh7FFF) begin pos = i; break; end
-  $display("block %0d @%0t: impulse at taps0[%0d]", blocks, $time, pos);
-  $display("value: %0d", temp_acc1);
-end
-*/
 endmodule
