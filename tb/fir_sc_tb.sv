@@ -84,7 +84,7 @@ module fir_tb;
     s_tdata[255:240] <= 16'h7fff;
     @(posedge clk);
     s_tdata <= '0;
-    repeat (500) @(posedge clk);
+    repeat (10) @(posedge clk);
     s_tvalid <= 0;
   endtask
   
@@ -95,7 +95,7 @@ module fir_tb;
     wait(s_tready);
     for(int i=0;i<'d527;i++)
         s_tdata[255:240] <= (i < 16) ? '0 : 16'sh7fff;
-    repeat (500) @(posedge clk);
+    repeat (10) @(posedge clk);
     s_tvalid <= 0;
     s_tdata <= '0;
   endtask
@@ -121,7 +121,7 @@ module fir_tb;
         for (i = 0; i < 8; i++) begin
             automatic real t = (frame * 8 + i) / fs_hz;
 
-            lane_A[i] = $rtoi(amp * $sin(two_pi * ch_freq * t) * 32767.0);
+            lane_A[i] = $rtoi(amp * $sin(two_pi * ch_freq * t) * 32767.0); // real to integer primitive
             lane_B[i] = $rtoi(amp * $sin(two_pi * ch_freq * t) * 32767.0);
 
             // Optionally store for reference model if desired:
