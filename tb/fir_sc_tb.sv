@@ -29,9 +29,10 @@ module fir_tb;
 	logic [CHANNELS*DW*PSAMPLES-1:0] s_tdata;
 	logic m_tvalid;
 	logic signed [31:0]     m_tdata;
+	logic signed [31:0]     xil_m_tdata;
 
 	// Instantiate DUT
-	fir #(
+	fir_troy #(
 		.TAP_COUNT (TAP_COUNT),
 		.DATA_WIDTH(DW),
 		.COEF_WIDTH(COEFW),
@@ -46,11 +47,21 @@ module fir_tb;
 		.m_tvalid (m_tvalid),
 		.m_tdata  (m_tdata)
 	);
+	
+	// Instantiate Xilinx FIR Compiler
+	fir_compiler_0 fir_xil(
+	       .aclk(clk), 
+	       .aresetn(resetn), 
+	       .s_axis_data_tvalid(s_tvalid),
+	       .s_axis_data_tready(s_tready),
+	       .s_axis_data_tdata(s_tdata),
+	       .m_axis_data_tvalid(xil_m_tvalid),
+	       .m_axis_data_tdata(xil_m_tdata)
+	);
 
 	// Clock
 	always begin clk = 1'b0; #(CLK_PER/2); clk = 1'b1; #(CLK_PER/2); end
 
-	// Reference data (globals so Vivado is happy)
 	// Coeffs loaded with same file as DUT
 	logic signed [15:0] coef  [0:TAP_COUNT-1];
 	// Input sequence (post-averaging notionally; we drive all channels the same)
@@ -92,6 +103,7 @@ module fir_tb;
 		wait(s_tready);
 		@(posedge clk);
 		s_tdata[255:240] <= 16'h7fff;
+		s_tdata[15:0] <= 16'h7fff;
 		@(posedge clk);
 		s_tdata <= '0;
 		repeat (500) @(posedge clk);
@@ -127,7 +139,7 @@ module fir_tb;
 		logic signed [15:0] lane_A [0:7];
 		logic signed [15:0] lane_B [0:7];
 
-		$display("=== Sending sinusoidal input: fA and fB=%0.2f Hz, frames=%0d ===",
+		$display("Sending sinusoidal input: fA and fB=%0.2f Hz, frames=%0d",
 				ch_freq, num_frames);
 
 		s_tvalid <= 1;
@@ -158,16 +170,16 @@ module fir_tb;
 		s_tvalid <= 0;
 		s_tdata  <= '0;
 
-		$display("=== Finished sending sine input ===");  
+		$display("Finished sending sine input");  
 	endtask
 	
 	// behavioral model computation reference
 	task compute_reference();
-		$display("=== Computing reference outputs ===");
+		$display("Computing reference outputs ");
 		for (int n = 0; n < 1024; n++) begin
 			y_ref[n] = fir_model_idx(n * DECIM + (DECIM - 1) - PSAMPLES);
 		end
-		$display("=== Reference model done ===");
+		$display("Reference model done");
 	endtask
 	
 	// Reset & init

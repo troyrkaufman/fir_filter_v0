@@ -11,7 +11,7 @@
 
 `timescale 1ns/1ps
 
-module fir #(
+module fir_troy #(
     parameter int TAP_COUNT   = 121,   // Number of taps
     parameter int DATA_WIDTH  = 16,    // Input sample width
     parameter int COEF_WIDTH  = 16,    // Coefficient width
@@ -59,19 +59,6 @@ module fir #(
             enable_fir <= s_tvalid && s_tready;
         end
     end
-    logic delay1;
-    // Detect rising edge of enable_fir
-    always_ff @(posedge clk) begin
-        if (!nrst) begin
-            delay0 <= 0;
-            delay1 <= 0;
-        end else begin
-            delay0 <= enable_fir;
-            delay1 <= delay0;
-    end
-    end
-
-    assign pos_enable_fir = delay0 && !delay1;
 
     // Delay line shift and load
     always_ff @(posedge clk) begin
@@ -82,33 +69,55 @@ module fir #(
             end
         end
         else if (enable_fir) begin
-            for (int i = TAP_COUNT-1; i >= 1; i--) begin
+            for (int i = TAP_COUNT-1; i >= P_SAMPLES; i--) begin
                 taps0[i] <= taps0[i - P_SAMPLES];
                 taps1[i] <= taps1[i - P_SAMPLES];
             end
 
+        // Load new parallel samples in reverse order so oldest sample is tap[0]
+            for (int j = 0; j < P_SAMPLES; j++) begin
+                taps0[j] <= $signed(s_tdata[16*(P_SAMPLES-1-j) +: 16]);
+                taps1[j] <= $signed(s_tdata[(P_SAMPLES*DATA_WIDTH) + 16*(P_SAMPLES-1-j) +: 16]);
+            end
+
+
+            /*
             // Load new parallel samples
             for (int j = 0; j < P_SAMPLES; j++) begin
                 taps0[j] <= $signed(s_tdata[16*j +: 16]);
                 taps1[j] <= $signed(s_tdata[(P_SAMPLES*DATA_WIDTH) + 16*j +: 16]);
             end
+                    */
     end
     end
 
     logic signed [47:0] temp_acc0 = 0;
     logic signed [47:0] temp_acc1 = 0;
 
-    logic signed [32:0] debug_mult;
+    logic signed [31:0] debug_output;
+    logic signed [15:0] debug_acc1;
+    logic signed [31:0] debug_acc2;
+    
+    logic signed [31:0] debug_debug;
+    
+    // pipeline MACs
+    //logic signed [47:0] acc0_reg [0:7];
+    //logic signed [47:0] acc1_reg [0:7];
     
     // Multiply-Accumulate (MAC) and Decimation
     always_ff @(posedge clk) begin
         if (!nrst) begin
             acc0        <= '0;
             acc1        <= '0;
+            //acc0_reg    <= '{default:0};
+            //acc1_reg    <= '{default:0};
             decim_count <= '0;
             m_tvalid    <= 1'b0;
             m_tdata     <= '0;
-            debug_mult <= 0;
+            debug_output <= 0;
+            debug_acc1 <= '0;
+            debug_acc2 <= '0;
+            debug_debug <= 0;
         end 
         else if (enable_fir) begin
             temp_acc0 = '0;
@@ -117,9 +126,17 @@ module fir #(
                 temp_acc0 = temp_acc0 + ($signed(taps0[k]) * $signed(coeffs[k]));
                 temp_acc1 = temp_acc1 + ($signed(taps1[k]) * $signed(coeffs[k]));
             end
+            
+            debug_acc1 <= temp_acc0>>>19;
+            debug_acc2 <= (temp_acc1>>>19)<<16;
+            debug_output <= {debug_acc2[31:16], debug_acc1};
+            //debug_output <= {(debug_acc2), debug_acc1};
+            //debug_output <= ((temp_acc1>>>19)<<16) | (temp_acc0>>>19);
+            //debug_output <= ((temp_acc1<<16)>>>19) | (temp_acc0>>>19);
+            debug_debug <= debug_acc2 << 16;
 
             m_tvalid <= 1;
-            m_tdata <= $signed(temp_acc0 >>> 15) + $signed(temp_acc1 >>> 15);
+            m_tdata <= ($signed(temp_acc0 >>> 15) + $signed(temp_acc1 >>> 15)>>>4);
        end else 
             m_tvalid <= 0;
     end
