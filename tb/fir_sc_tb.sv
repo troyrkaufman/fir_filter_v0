@@ -19,7 +19,28 @@ module fir_tb;
 	localparam int COEFW      = 16;
 	localparam int DECIM      = 8;
 	localparam int PSAMPLES   = 8;
-	localparam int CLK_PER    = 3;   // 100 MHz
+	localparam int CLK_PER    = 10;   // 100 MHz
+	
+	// Parameters for CORDIC
+	localparam CORDIC_CLK_PERIOD = 2;
+	localparam signed [15:0] PI_POS = 16'h6488;
+	localparam signed [15:0] PI_NEG = 16'h9878;
+	localparam PHASE_INC_2MHz = 200;   // phase jump for 30MHz sine 
+	localparam PHASE_INC_30MHz = 3000; // phase jump for 30MHz sine wave
+	
+	// internal variables for CORDIC
+	logic cordic_clk = 1'b0;
+	logic phase_tvalid = 1'b0;
+	logic signed [15:0] phase_2MHz = 0;
+	logic signed [15:0] phase_30MHz = 0;
+	logic sincos_2MHz_tvalid;
+	logic sincos_30MHz_tvalid;
+	logic signed [15:0] sin_2MHz, cos_2MHz;
+	logic signed [15:0] sin_30MHz, cos_30MHz;
+	
+	logic signed [15:0] noisy_signal = 0;
+	logic signed [15:0] filtered_signal;
+	
 
 	// DUT I/O
 	logic clk;
@@ -29,7 +50,12 @@ module fir_tb;
 	logic [CHANNELS*DW*PSAMPLES-1:0] s_tdata;
 	logic m_tvalid;
 	logic signed [31:0]     m_tdata;
+	logic signed               xil_s_tdata;
 	logic signed [31:0]     xil_m_tdata;
+	
+	// Queues
+	logic [15:0] expected_outputs [$];
+	logic [15:0] outputs [$];
 
 	// Instantiate DUT
 	fir_troy #(
@@ -48,12 +74,30 @@ module fir_tb;
 		.m_tdata  (m_tdata)
 	);
 	
+	// create a 30 MHz sine wave
+	cordic_0 cordic_inst_0(
+	   .aclk                   (cordic_clk),
+	   .s_axis_phase_tvalid    (phase_tvalid),
+	   .s_axis_phase_tdata     (phase_30MHz),
+	   .m_axis_dout_tvalid     (sinccos_30MHz_tvalid),
+	   .m_axis_dout_tdata      ({sin_30MHz, cos_30MHz})
+	);
+	
+	
+	cordic_0 cordic_inst_1(
+           .aclk                   (cordic_clk),
+           .s_axis_phase_tvalid    (phase_tvalid),
+           .s_axis_phase_tdata     (phase_2MHz),
+           .m_axis_dout_tvalid     (sinccos_2MHz_tvalid),
+           .m_axis_dout_tdata      ({sin_2MHz, cos_2MHz})
+        );
+	
 	// Instantiate Xilinx FIR Compiler
 	fir_compiler_0 fir_xil(
 	       .aclk(clk), 
 	       .aresetn(resetn), 
 	       .s_axis_data_tvalid(s_tvalid),
-	       .s_axis_data_tready(s_tready),
+	       .s_axis_data_tready(xil_s_tready),
 	       .s_axis_data_tdata(s_tdata),
 	       .m_axis_data_tvalid(xil_m_tvalid),
 	       .m_axis_data_tdata(xil_m_tdata)
@@ -66,36 +110,7 @@ module fir_tb;
 	logic signed [15:0] coef  [0:TAP_COUNT-1];
 	// Input sequence (post-averaging notionally; we drive all channels the same)
 	logic signed [15:0] x     [0:2047];       // enough headroom
-	// Expected decimated outputs
-	logic signed [31:0] y_ref [0:1023];
-	logic signed [47:0] debug_sample;
 	
-		int exp_i = 0;
-		int act_i =0;
-		int diff  = 0;
-
-
-	// Small helper
-	function automatic int abs_int(input int v);
-		return (v < 0) ? -v : v;
-	endfunction
-	
-	// Behavioral FIR reference model that accesses globals directly.
-	function automatic signed [31:0] fir_model_idx(input int n);
-		logic signed [47:0] acc; acc = 0;
-		debug_sample = 0;
-		for (int k = 0; k < TAP_COUNT; k++) begin
-		if (n - k >= 0) begin 
-			acc += x[n - k] * coef[k];
-		end  
-		end
-		return acc >>> 15;
-	endfunction
-
-	// Output logging & compare state
-	integer f_out;
-	int     out_idx = 0;          // counts decimated outputs seen
-	int debug_n;
 	
 	task impulse();
 		@(posedge clk);
@@ -106,13 +121,8 @@ module fir_tb;
 		s_tdata[15:0] <= 16'h7fff;
 		@(posedge clk);
 		s_tdata <= '0;
-		repeat (500) @(posedge clk);
 		s_tvalid <= 0;
 	
-		// behavioral model input
-		for (int n = 0; n < 2048; n++) begin 
-		x[n] = (n == 0) ? 16'sh7FFF : 16'sd0;
-		end
 	endtask
 	
 	task step();
@@ -122,64 +132,70 @@ module fir_tb;
 		wait(s_tready);
 		for(int i=0;i<'d527;i++)
 			s_tdata[255:240] <= (i < 16) ? '0 : 16'sh7fff;
-		repeat (100) @(posedge clk);
+		@(posedge clk);
 		s_tdata <= '0;
-		repeat (500) @(posedge clk);
+		//repeat (500) @(posedge clk);
 		s_tvalid <= 0;
 	endtask
 	
-	task sinusoid(
-		input real ch_freq,
-		input real fs_hz,
-		input real amp,
-		input int num_frames);
-		
-		static real two_pi = 6.28318530718;
-		int frame, i;
-		logic signed [15:0] lane_A [0:7];
-		logic signed [15:0] lane_B [0:7];
-
-		$display("Sending sinusoidal input: fA and fB=%0.2f Hz, frames=%0d",
-				ch_freq, num_frames);
-
-		s_tvalid <= 1;
-
-		for (frame = 0; frame < num_frames; frame++) begin
-			// Fill 8 samples per channel
-			for (i = 0; i < 8; i++) begin
-				automatic real t = (frame * 8 + i) / fs_hz;
-
-				lane_A[i] = $rtoi(amp * $sin(two_pi * ch_freq * t) * 32767.0);
-				lane_B[i] = $rtoi(amp * $sin(two_pi * ch_freq * t) * 32767.0);
-
-				// Optionally store for reference model if desired:
-				x[frame * 8 + i] = lane_A[i];
-			end
-
-			// Pack Channel B (upper 128 bits) and Channel A (lower 128 bits)
-			s_tdata = {
-				lane_B[7], lane_B[6], lane_B[5], lane_B[4],
-				lane_B[3], lane_B[2], lane_B[1], lane_B[0],
-				lane_A[7], lane_A[6], lane_A[5], lane_A[4],
-				lane_A[3], lane_A[2], lane_A[1], lane_A[0]
-			};
-
-			@(posedge clk);
-		end
-
-		s_tvalid <= 0;
-		s_tdata  <= '0;
-
-		$display("Finished sending sine input");  
-	endtask
-	
-	// behavioral model computation reference
-	task compute_reference();
-		$display("Computing reference outputs ");
-		for (int n = 0; n < 1024; n++) begin
-			y_ref[n] = fir_model_idx(n * DECIM + (DECIM - 1) - PSAMPLES);
-		end
-		$display("Reference model done");
+	// phase sweep
+	always @ (posedge cordic_clk)
+	   begin
+	       phase_tvalid <= 1'b1;
+	       
+	       // sweep phase to execute 2MHz sine
+	       if (phase_2MHz + PHASE_INC_2MHz < PI_POS) begin
+	           phase_2MHz <= phase_2MHz + PHASE_INC_2MHz;
+	       end else begin 
+	           phase_2MHz <= PI_NEG + (phase_2MHz + PHASE_INC_2MHz - PI_POS);
+	       end
+	       
+	       // sweep phase to execute 30MHz sine
+	       if (phase_30MHz + PHASE_INC_30MHz < PI_POS) begin
+               phase_30MHz <= phase_30MHz + PHASE_INC_30MHz;
+           end else begin 
+               phase_30MHz <= PI_NEG + (phase_30MHz + PHASE_INC_30MHz - PI_POS);
+           end
+	       
+	   end
+	   
+	 // create 500 MHz Cordic clock
+	   always begin 
+	       cordic_clk = #(CORDIC_CLK_PERIOD/2) ~cordic_clk;
+	   end
+	   
+	// sinudoid table
+	task sinusoid();
+	   begin 
+	       @(posedge clk);
+           s_tvalid <= 1;
+           @(posedge clk);
+           wait(s_tready);
+           @(posedge clk);
+           for (int i = 0; i < 51; i++) begin 
+            @(posedge clk);
+            s_tdata[255:240] = (sin_2MHz + sin_30MHz) / 2;
+            s_tdata[239:224] = (sin_2MHz + sin_30MHz) / 2;
+            s_tdata[223:208] = (sin_2MHz + sin_30MHz) / 2;
+            s_tdata[207:192] = (sin_2MHz + sin_30MHz) / 2;
+            s_tdata[191:176] = (sin_2MHz + sin_30MHz) / 2;
+            s_tdata[175:160] = (sin_2MHz + sin_30MHz) / 2;
+            s_tdata[159:144] = (sin_2MHz + sin_30MHz) / 2;
+            s_tdata[143:128] = (sin_2MHz + sin_30MHz) / 2;
+            
+            s_tdata[127:112] = (sin_2MHz + sin_30MHz) / 2;
+            s_tdata[111:96] = (sin_2MHz + sin_30MHz) / 2;
+            s_tdata[95:80] = (sin_2MHz + sin_30MHz) / 2;
+            s_tdata[79:64] = (sin_2MHz + sin_30MHz) / 2;
+            s_tdata[63:49] = (sin_2MHz + sin_30MHz) / 2;
+            s_tdata[48:33] = (sin_2MHz + sin_30MHz) / 2;
+            s_tdata[32:16] = (sin_2MHz + sin_30MHz) / 2;
+            s_tdata[15:0] = (sin_2MHz + sin_30MHz) / 2;
+           end
+           @(posedge clk);
+           s_tdata <= '0;
+           s_tvalid <= 0;   
+	   end
 	endtask
 	
 	// Reset & init
@@ -191,62 +207,26 @@ module fir_tb;
 
 		$readmemh("fir_coe.txt", coef);
 
-		// Open log
-		f_out = $fopen("fir_output.txt", "w");
-		if (f_out == 0) begin
-		$display("ERROR: cannot open fir_output.txt"); $finish;
-		end else begin
-		$display("Opened fir_output.txt (handle %0d)", f_out);
-		end
-
 		// Release reset after some clocks
 		repeat (5) @(posedge clk);
 		resetn = 1;
 		
 		// send an impulse
-		impulse();
-		@(posedge clk);
-		
+		//impulse();
+		//repeat (25) @(posedge clk);
+
 		// send an input step
-		step();
+		//step();
 		@(posedge clk);
-		
+
 		// send a sinusoid
-		sinusoid(1000.0, 100000.0, 0.8, 128); //input channel freq, sample freq, amp, num frames
+		sinusoid();
 		@(posedge clk);
-		
-		// run reference behavioral model
-		compute_reference();
-		@(posedge clk);
-		
-		$display("Simulation tail done.");
+		//wait(!xil_s_tready);
+
+		$display("Simulation done.");
 		$finish;
 	end
 
-	// Capture & compare DUT outputs
-	always_ff @(posedge clk) begin
-		if (m_tvalid) begin
-		$fwrite(f_out, "%0d\n", $signed(m_tdata));
-
-		// Compare against reference
-		exp_i = y_ref[out_idx];
-		act_i = m_tdata;
-		diff  = act_i - exp_i;
-					
-		if (abs_int(diff) > 3)
-			$display("[FAIL] n=%0d exp=%0d got=%0d diff=%0d",
-					out_idx, exp_i, act_i, diff);
-		else
-			$display("[PASS] n=%0d exp=%0d got=%0d",
-					out_idx, exp_i, act_i);
-
-		out_idx++;
-		end
-	end
-
-	// Close logs
-	final begin
-		if (f_out) $fclose(f_out);
-	end
 
 endmodule

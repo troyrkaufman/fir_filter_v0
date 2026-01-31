@@ -100,10 +100,6 @@ module fir_troy #(
     
     logic signed [31:0] debug_debug;
     
-    // pipeline MACs
-    //logic signed [47:0] acc0_reg [0:7];
-    //logic signed [47:0] acc1_reg [0:7];
-    
     // Multiply-Accumulate (MAC) and Decimation
     always_ff @(posedge clk) begin
         if (!nrst) begin
@@ -119,7 +115,7 @@ module fir_troy #(
             debug_acc2 <= '0;
             debug_debug <= 0;
         end 
-        else if (enable_fir) begin
+        else if (enable_fir) begin // can't be <= must be = 
             temp_acc0 = '0;
             temp_acc1 = '0;
             for (int k = 0; k < TAP_COUNT; k++) begin
@@ -129,14 +125,10 @@ module fir_troy #(
             
             debug_acc1 <= temp_acc0>>>19;
             debug_acc2 <= (temp_acc1>>>19)<<16;
-            debug_output <= {debug_acc2[31:16], debug_acc1};
-            //debug_output <= {(debug_acc2), debug_acc1};
-            //debug_output <= ((temp_acc1>>>19)<<16) | (temp_acc0>>>19);
-            //debug_output <= ((temp_acc1<<16)>>>19) | (temp_acc0>>>19);
-            debug_debug <= debug_acc2 << 16;
+            debug_output <= {debug_acc2[31:16], debug_acc1}; // real output signal
 
             m_tvalid <= 1;
-            m_tdata <= ($signed(temp_acc0 >>> 15) + $signed(temp_acc1 >>> 15)>>>4);
+            m_tdata <= {debug_acc2[31:16], debug_acc1};
        end else 
             m_tvalid <= 0;
     end
