@@ -68,6 +68,7 @@ module fir_troy #(
                 taps1[i] <= '0;
             end
         end
+        /* i believe this delay tap is backwards...fixing it below
         else if (enable_fir) begin
             for (int i = TAP_COUNT-1; i >= P_SAMPLES; i--) begin
                 taps0[i] <= taps0[i - P_SAMPLES];
@@ -79,15 +80,19 @@ module fir_troy #(
                 taps0[j] <= $signed(s_tdata[16*(P_SAMPLES-1-j) +: 16]);
                 taps1[j] <= $signed(s_tdata[(P_SAMPLES*DATA_WIDTH) + 16*(P_SAMPLES-1-j) +: 16]);
             end
-
-
-            /*
-            // Load new parallel samples
-            for (int j = 0; j < P_SAMPLES; j++) begin
-                taps0[j] <= $signed(s_tdata[16*j +: 16]);
-                taps1[j] <= $signed(s_tdata[(P_SAMPLES*DATA_WIDTH) + 16*j +: 16]);
+            */
+        else if (enable_fir) begin
+            for (int i = P_SAMPLES; i >= TAP_COUNT-1; i++) begin
+                taps0[i] <= taps0[i + P_SAMPLES];
+                taps1[i] <= taps1[i + P_SAMPLES];
             end
-                    */
+
+        // Load new parallel samples in forward order so oldest sample is tap[121]
+            for (int j = 0; j < P_SAMPLES; j++) begin
+                taps0[j] <= $signed(s_tdata[15:0]);
+                taps1[j] <= $signed(s_tdata[(P_SAMPLES*DATA_WIDTH) +: 16]);
+            end
+
     end
     end
 
@@ -105,8 +110,6 @@ module fir_troy #(
         if (!nrst) begin
             acc0        <= '0;
             acc1        <= '0;
-            //acc0_reg    <= '{default:0};
-            //acc1_reg    <= '{default:0};
             decim_count <= '0;
             m_tvalid    <= 1'b0;
             m_tdata     <= '0;
