@@ -68,30 +68,27 @@ module fir_troy #(
                 taps1[i] <= '0;
             end
         end
-        /* i believe this delay tap is backwards...fixing it below
         else if (enable_fir) begin
-            for (int i = TAP_COUNT-1; i >= P_SAMPLES; i--) begin
-                taps0[i] <= taps0[i - P_SAMPLES];
-                taps1[i] <= taps1[i - P_SAMPLES];
-            end
+//            for (int i = P_SAMPLES; i >= TAP_COUNT-1; i++) begin
+//                taps0[i] <= taps0[i + P_SAMPLES];
+//                taps1[i] <= taps1[i + P_SAMPLES];
+//            end
+                for (int i = TAP_COUNT-1; i >= P_SAMPLES; i--) begin
+                        taps0[i] <= taps0[i-P_SAMPLES];
+                        taps1[i] <= taps1[i-P_SAMPLES];
+                end 
 
-        // Load new parallel samples in reverse order so oldest sample is tap[0]
-            for (int j = 0; j < P_SAMPLES; j++) begin
-                taps0[j] <= $signed(s_tdata[16*(P_SAMPLES-1-j) +: 16]);
-                taps1[j] <= $signed(s_tdata[(P_SAMPLES*DATA_WIDTH) + 16*(P_SAMPLES-1-j) +: 16]);
-            end
-            */
-        else if (enable_fir) begin
-            for (int i = P_SAMPLES; i >= TAP_COUNT-1; i++) begin
-                taps0[i] <= taps0[i + P_SAMPLES];
-                taps1[i] <= taps1[i + P_SAMPLES];
-            end
 
         // Load new parallel samples in forward order so oldest sample is tap[121]
-            for (int j = 0; j < P_SAMPLES; j++) begin
-                taps0[j] <= $signed(s_tdata[15:0]);
-                taps1[j] <= $signed(s_tdata[(P_SAMPLES*DATA_WIDTH) +: 16]);
-            end
+//            for (int j = 0; j < P_SAMPLES; j++) begin
+//                taps0[j] <= $signed(s_tdata[15:0]);
+//                taps1[j] <= $signed(s_tdata[((P_SAMPLES+j)*DATA_WIDTH) +: 16]);
+//            end
+        for (int j = 0; j < P_SAMPLES; j++) begin
+            taps0[j] <= $signed(s_tdata[j*DATA_WIDTH +: DATA_WIDTH]);
+            taps1[j] <= $signed(s_tdata[(P_SAMPLES+j)*DATA_WIDTH +: DATA_WIDTH]);
+        end
+
 
     end
     end
@@ -129,6 +126,7 @@ module fir_troy #(
             debug_acc1 <= temp_acc0>>>19;
             debug_acc2 <= (temp_acc1>>>19)<<16;
             debug_output <= {debug_acc2[31:16], debug_acc1}; // real output signal
+            debug_debug <= temp_acc0>>>14;
 
             m_tvalid <= 1;
             m_tdata <= {debug_acc2[31:16], debug_acc1};

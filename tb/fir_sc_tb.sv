@@ -41,6 +41,9 @@ module fir_tb;
 	logic signed [15:0] noisy_signal = 0;
 	logic signed [15:0] filtered_signal;
 	
+	// Debug signals for xilinx FIR compiler
+	logic signed [15:0] xil_m_tdata_half;
+	assign xil_m_tdata_half = xil_m_tdata[15:0];
 
 	// DUT I/O
 	logic clk;
@@ -198,6 +201,41 @@ module fir_tb;
 	   end
 	endtask
 	
+	// Fill queues
+	always begin 
+	   if (xil_m_tvalid)
+	       expected_outputs.push_back(xil_m_tdata);
+	   @(posedge clk);
+	   end
+	
+	always begin 
+	   if (m_tvalid)
+          outputs.push_back(m_tdata);
+      @(posedge clk);
+      end
+      
+    task automatic check();
+              logic [15:0] expected_data;
+              logic [15:0] received_data;
+          
+              if (expected_outputs.size() != 0) begin
+                  expected_data = expected_outputs.pop_front();
+                  received_data = outputs.pop_front();
+          
+                  if (received_data !== expected_data) begin
+                      $error("Time %0t: DATA MISMATCH! Expected 0x%0d, Got 0x%0d",
+                             $time, expected_data, received_data);
+                  end
+                  else begin
+                      $display("Time %0t: DATA MATCH! Expected 0x%0h, Got 0x%0h",
+                               $time, expected_data, received_data);
+                  end
+              end
+              else begin
+                  $error("Time %0t: Received unexpected data! Expected queue is empty", $time);
+              end
+          endtask
+	
 	// Reset & init
 	initial begin
 		clk      = 0;
@@ -221,8 +259,12 @@ module fir_tb;
 
 		// send a sinusoid
 		sinusoid();
-		@(posedge clk);
+		repeat (400) @(posedge clk);
 		//wait(!xil_s_tready);
+		
+		while (expected_outputs.size() > 0) begin
+            check();
+        end
 
 		$display("Simulation done.");
 		$finish;
