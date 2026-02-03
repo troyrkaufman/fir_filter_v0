@@ -69,27 +69,14 @@ module fir_troy #(
             end
         end
         else if (enable_fir) begin
-//            for (int i = P_SAMPLES; i >= TAP_COUNT-1; i++) begin
-//                taps0[i] <= taps0[i + P_SAMPLES];
-//                taps1[i] <= taps1[i + P_SAMPLES];
-//            end
-                for (int i = TAP_COUNT-1; i >= P_SAMPLES; i--) begin
-                        taps0[i] <= taps0[i-P_SAMPLES];
-                        taps1[i] <= taps1[i-P_SAMPLES];
-                end 
-
-
-        // Load new parallel samples in forward order so oldest sample is tap[121]
-//            for (int j = 0; j < P_SAMPLES; j++) begin
-//                taps0[j] <= $signed(s_tdata[15:0]);
-//                taps1[j] <= $signed(s_tdata[((P_SAMPLES+j)*DATA_WIDTH) +: 16]);
-//            end
-        for (int j = 0; j < P_SAMPLES; j++) begin
-            taps0[j] <= $signed(s_tdata[j*DATA_WIDTH +: DATA_WIDTH]);
-            taps1[j] <= $signed(s_tdata[(P_SAMPLES+j)*DATA_WIDTH +: DATA_WIDTH]);
-        end
-
-
+            for (int i = TAP_COUNT-1; i >= P_SAMPLES; i--) begin
+                    taps0[i] <= $signed(taps0[i-P_SAMPLES]);
+                    taps1[i] <= $signed(taps1[i-P_SAMPLES]);
+            end 
+            for (int j = P_SAMPLES-1; j >= 0; j--) begin
+                taps0[j] <= $signed(s_tdata[(j*DATA_WIDTH) +: DATA_WIDTH]);
+                taps1[j] <= $signed(s_tdata[(j*DATA_WIDTH + 'd128) +: DATA_WIDTH]);
+            end
     end
     end
 
@@ -103,34 +90,34 @@ module fir_troy #(
     logic signed [31:0] debug_debug;
     
     // Multiply-Accumulate (MAC) and Decimation
-    always_ff @(posedge clk) begin
+    always_comb begin
         if (!nrst) begin
-            acc0        <= '0;
-            acc1        <= '0;
-            decim_count <= '0;
-            m_tvalid    <= 1'b0;
-            m_tdata     <= '0;
-            debug_output <= 0;
-            debug_acc1 <= '0;
-            debug_acc2 <= '0;
-            debug_debug <= 0;
+            acc0        = '0;
+            acc1        = '0;
+            decim_count = '0;
+            m_tvalid    = 1'b0;
+            m_tdata     = '0;
+            debug_output = 0;
+            debug_acc1 = '0;
+            debug_acc2 = '0;
+            debug_debug = 0;
         end 
         else if (enable_fir) begin // can't be <= must be = 
             temp_acc0 = '0;
             temp_acc1 = '0;
             for (int k = 0; k < TAP_COUNT; k++) begin
-                temp_acc0 = temp_acc0 + ($signed(taps0[k]) * $signed(coeffs[k]));
-                temp_acc1 = temp_acc1 + ($signed(taps1[k]) * $signed(coeffs[k]));
+                temp_acc0 = $signed(temp_acc0) + ($signed(taps0[k]) * $signed(coeffs[k]));
+                temp_acc1 = $signed(temp_acc1) + ($signed(taps1[k]) * $signed(coeffs[k]));
             end
             
-            debug_acc1 <= temp_acc0>>>19;
-            debug_acc2 <= (temp_acc1>>>19)<<16;
-            debug_output <= {debug_acc2[31:16], debug_acc1}; // real output signal
-            debug_debug <= temp_acc0>>>14;
+            debug_acc1 = temp_acc0>>>19;
+            debug_acc2 = (temp_acc1>>>19)<<16;
+            debug_output = {debug_acc2[31:16], debug_acc1}; // real output signal
+            debug_debug = temp_acc0>>>14;
 
-            m_tvalid <= 1;
-            m_tdata <= {debug_acc2[31:16], debug_acc1};
+            m_tvalid = 1;
+            m_tdata = {debug_acc2[31:16], debug_acc1};
        end else 
-            m_tvalid <= 0;
+            m_tvalid = 0;
     end
 endmodule

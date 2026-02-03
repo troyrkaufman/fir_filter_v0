@@ -190,9 +190,9 @@ module fir_tb;
             s_tdata[111:96] = (sin_2MHz + sin_30MHz) / 2;
             s_tdata[95:80] = (sin_2MHz + sin_30MHz) / 2;
             s_tdata[79:64] = (sin_2MHz + sin_30MHz) / 2;
-            s_tdata[63:49] = (sin_2MHz + sin_30MHz) / 2;
-            s_tdata[48:33] = (sin_2MHz + sin_30MHz) / 2;
-            s_tdata[32:16] = (sin_2MHz + sin_30MHz) / 2;
+            s_tdata[63:48] = (sin_2MHz + sin_30MHz) / 2;
+            s_tdata[47:32] = (sin_2MHz + sin_30MHz) / 2;
+            s_tdata[31:16] = (sin_2MHz + sin_30MHz) / 2;
             s_tdata[15:0] = (sin_2MHz + sin_30MHz) / 2;
            end
            @(posedge clk);
@@ -203,20 +203,20 @@ module fir_tb;
 	
 	// Fill queues
 	always begin 
-	   if (xil_m_tvalid)
-	       expected_outputs.push_back(xil_m_tdata);
+	   if (xil_m_tvalid && (xil_m_tdata[31:16] != '0))
+	       expected_outputs.push_back($signed(xil_m_tdata));
 	   @(posedge clk);
 	   end
 	
 	always begin 
-	   if (m_tvalid)
-          outputs.push_back(m_tdata);
+	   if (m_tvalid && (m_tdata[31:16] != '0))
+          outputs.push_back($signed(m_tdata[31:16]));
       @(posedge clk);
       end
       
     task automatic check();
-              logic [15:0] expected_data;
-              logic [15:0] received_data;
+              logic signed [15:0] expected_data;
+              logic signed [15:0] received_data;
           
               if (expected_outputs.size() != 0) begin
                   expected_data = expected_outputs.pop_front();
@@ -260,7 +260,6 @@ module fir_tb;
 		// send a sinusoid
 		sinusoid();
 		repeat (400) @(posedge clk);
-		//wait(!xil_s_tready);
 		
 		while (expected_outputs.size() > 0) begin
             check();
