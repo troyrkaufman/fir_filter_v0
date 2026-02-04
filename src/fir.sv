@@ -117,7 +117,6 @@ module fir_troy #(
             debug_debug = temp_acc0>>>14;
 
             m_tvalid_next = 1;
-            //m_tdata = {debug_acc2[31:16], debug_acc1};
        end else 
             m_tvalid_next = 0;
     end
@@ -125,7 +124,7 @@ module fir_troy #(
     logic [31:0] delay_tdata [0:65];
     logic [65:0] delay_tvalid;
     
-    // Shift register to match Xilinx delay
+    // Shift registers to match Xilinx delay
     always_ff@(posedge clk) begin
         if (!nrst) begin
             for (int i = 0; i < 66; i++) begin
@@ -142,7 +141,15 @@ module fir_troy #(
         end
     end
     
-    assign m_tdata = m_tvalid ? delay_tdata[65] : '0;
     assign m_tvalid = delay_tvalid[0];
+    
+    always_ff@(posedge clk) begin 
+        if (!nrst) begin
+            m_tdata <= '0;
+        end else if (m_tvalid && (delay_tvalid[1] && delay_tvalid[0])) begin 
+            m_tdata <= delay_tdata[65];
+        end
+    
+    end
     
 endmodule
