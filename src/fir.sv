@@ -88,6 +88,7 @@ module fir_troy #(
     logic signed [31:0] debug_acc2;
     
     logic signed [31:0] debug_debug;
+    logic m_tvalid_next;
     
     // Multiply-Accumulate (MAC) and Decimation
     always_comb begin
@@ -95,7 +96,7 @@ module fir_troy #(
             acc0        = '0;
             acc1        = '0;
             decim_count = '0;
-            m_tvalid    = 1'b0;
+            m_tvalid_next    = 1'b0;
             m_tdata     = '0;
             debug_output = 0;
             debug_acc1 = '0;
@@ -115,9 +116,33 @@ module fir_troy #(
             debug_output = {debug_acc2[31:16], debug_acc1}; // real output signal
             debug_debug = temp_acc0>>>14;
 
-            m_tvalid = 1;
-            m_tdata = {debug_acc2[31:16], debug_acc1};
+            m_tvalid_next = 1;
+            //m_tdata = {debug_acc2[31:16], debug_acc1};
        end else 
-            m_tvalid = 0;
+            m_tvalid_next = 0;
     end
+    
+    logic [31:0] delay_tdata [0:65];
+    logic [65:0] delay_tvalid;
+    
+    // Shift register to match Xilinx delay
+    always_ff@(posedge clk) begin
+        if (!nrst) begin
+            for (int i = 0; i < 66; i++) begin
+                delay_tdata[i] <= '0;
+            end
+            delay_tvalid <= '0;
+        end else begin
+            for(int i = 0; i < 'd65; i++) begin 
+                delay_tdata[i+1] <= delay_tdata[i];
+            end
+            
+            delay_tdata[0] <= debug_output;       
+            delay_tvalid <= {m_tvalid_next, delay_tvalid[65:1]};
+        end
+    end
+    
+    assign m_tdata = m_tvalid ? delay_tdata[65] : '0;
+    assign m_tvalid = delay_tvalid[0];
+    
 endmodule

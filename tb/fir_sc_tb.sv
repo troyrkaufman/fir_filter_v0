@@ -223,11 +223,11 @@ module fir_tb;
                   received_data = outputs.pop_front();
           
                   if (received_data !== expected_data) begin
-                      $error("Time %0t: DATA MISMATCH! Expected 0x%0d, Got 0x%0d",
+                      $error("Time %0t: DATA MISMATCH! Expected %0d, Got %0d",
                              $time, expected_data, received_data);
                   end
                   else begin
-                      $display("Time %0t: DATA MATCH! Expected 0x%0h, Got 0x%0h",
+                      $display("Time %0t: DATA MATCH! Expected %0h, Got %0h",
                                $time, expected_data, received_data);
                   end
               end
