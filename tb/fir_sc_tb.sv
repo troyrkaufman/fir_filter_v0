@@ -10,7 +10,7 @@
 
 `timescale 1ns/1ps
 
-module fir_tb;
+module fir_sc_tb;
 
 	// Parameters (match DUT)
 	localparam int CHANNELS   = 2;
@@ -25,25 +25,25 @@ module fir_tb;
 	localparam CORDIC_CLK_PERIOD = 2;
 	localparam signed [15:0] PI_POS = 16'h6488;
 	localparam signed [15:0] PI_NEG = 16'h9878;
-	localparam PHASE_INC_2MHz = 200;   // phase jump for 30MHz sine 
-	localparam PHASE_INC_30MHz = 3000; // phase jump for 30MHz sine wave
+	localparam PHASE_INC_50MHz = 5000;   // phase jump for 50MHz sine 
+	localparam PHASE_INC_2MHz = 200; // phase jump for 2MHz sine wave
 	
 	// internal variables for CORDIC
 	logic cordic_clk = 1'b0;
 	logic phase_tvalid = 1'b0;
+	logic signed [15:0] phase_50MHz = 0;
 	logic signed [15:0] phase_2MHz = 0;
-	logic signed [15:0] phase_30MHz = 0;
+	logic sincos_50MHz_tvalid;
 	logic sincos_2MHz_tvalid;
-	logic sincos_30MHz_tvalid;
+	logic signed [15:0] sin_50MHz, cos_50MHz;
 	logic signed [15:0] sin_2MHz, cos_2MHz;
-	logic signed [15:0] sin_30MHz, cos_30MHz;
 	
 	logic signed [15:0] noisy_signal = 0;
 	logic signed [15:0] filtered_signal;
 	
 	// Debug signals for xilinx FIR compiler
+	logic signed [15:0] m_tdata_half;
 	logic signed [15:0] xil_m_tdata_half;
-	assign xil_m_tdata_half = xil_m_tdata[15:0];
 
 	// DUT I/O
 	logic clk;
@@ -61,7 +61,7 @@ module fir_tb;
 	logic [15:0] outputs [$];
 
 	// Instantiate DUT
-	fir_troy #(
+	fir #(
 		.TAP_COUNT (TAP_COUNT),
 		.DATA_WIDTH(DW),
 		.COEF_WIDTH(COEFW),
@@ -81,18 +81,18 @@ module fir_tb;
 	cordic_0 cordic_inst_0(
 	   .aclk                   (cordic_clk),
 	   .s_axis_phase_tvalid    (phase_tvalid),
-	   .s_axis_phase_tdata     (phase_30MHz),
-	   .m_axis_dout_tvalid     (sinccos_30MHz_tvalid),
-	   .m_axis_dout_tdata      ({sin_30MHz, cos_30MHz})
+	   .s_axis_phase_tdata     (phase_2MHz),
+	   .m_axis_dout_tvalid     (sincos_2MHz_tvalid),
+	   .m_axis_dout_tdata      ({sin_2MHz, cos_2MHz})
 	);
 	
 	
 	cordic_0 cordic_inst_1(
            .aclk                   (cordic_clk),
            .s_axis_phase_tvalid    (phase_tvalid),
-           .s_axis_phase_tdata     (phase_2MHz),
-           .m_axis_dout_tvalid     (sinccos_2MHz_tvalid),
-           .m_axis_dout_tdata      ({sin_2MHz, cos_2MHz})
+           .s_axis_phase_tdata     (phase_50MHz),
+           .m_axis_dout_tvalid     (sincos_50MHz_tvalid),
+           .m_axis_dout_tdata      ({sin_50MHz, cos_50MHz})
         );
 	
 	// Instantiate Xilinx FIR Compiler
@@ -112,7 +112,7 @@ module fir_tb;
 	// Coeffs loaded with same file as DUT
 	logic signed [15:0] coef  [0:TAP_COUNT-1];
 	// Input sequence (post-averaging notionally; we drive all channels the same)
-	logic signed [15:0] x     [0:2047];       // enough headroom
+	//logic signed [15:0] x     [0:2047];       // enough headroom
 	
 	
 	task impulse();
@@ -146,18 +146,18 @@ module fir_tb;
 	   begin
 	       phase_tvalid <= 1'b1;
 	       
-	       // sweep phase to execute 2MHz sine
-	       if (phase_2MHz + PHASE_INC_2MHz < PI_POS) begin
-	           phase_2MHz <= phase_2MHz + PHASE_INC_2MHz;
+	       // sweep phase to execute 50MHz sine
+	       if (phase_50MHz + PHASE_INC_50MHz < PI_POS) begin
+	           phase_50MHz <= phase_50MHz + PHASE_INC_50MHz;
 	       end else begin 
-	           phase_2MHz <= PI_NEG + (phase_2MHz + PHASE_INC_2MHz - PI_POS);
+	           phase_50MHz <= PI_NEG + (phase_50MHz + PHASE_INC_50MHz - PI_POS);
 	       end
 	       
-	       // sweep phase to execute 30MHz sine
-	       if (phase_30MHz + PHASE_INC_30MHz < PI_POS) begin
-               phase_30MHz <= phase_30MHz + PHASE_INC_30MHz;
+	       // sweep phase to execute 2MHz sine
+	       if (phase_2MHz + PHASE_INC_2MHz < PI_POS) begin
+               phase_2MHz <= phase_2MHz + PHASE_INC_2MHz;
            end else begin 
-               phase_30MHz <= PI_NEG + (phase_30MHz + PHASE_INC_30MHz - PI_POS);
+               phase_2MHz <= PI_NEG + (phase_2MHz + PHASE_INC_2MHz - PI_POS);
            end
 	       
 	   end
@@ -175,25 +175,25 @@ module fir_tb;
            @(posedge clk);
            wait(s_tready);
            @(posedge clk);
-           for (int i = 0; i < 51; i++) begin 
+           for (int i = 0; i < 528; i++) begin 
             @(posedge clk);
-            s_tdata[255:240] = (sin_2MHz + sin_30MHz) / 2;
-            s_tdata[239:224] = (sin_2MHz + sin_30MHz) / 2;
-            s_tdata[223:208] = (sin_2MHz + sin_30MHz) / 2;
-            s_tdata[207:192] = (sin_2MHz + sin_30MHz) / 2;
-            s_tdata[191:176] = (sin_2MHz + sin_30MHz) / 2;
-            s_tdata[175:160] = (sin_2MHz + sin_30MHz) / 2;
-            s_tdata[159:144] = (sin_2MHz + sin_30MHz) / 2;
-            s_tdata[143:128] = (sin_2MHz + sin_30MHz) / 2;
+            s_tdata[255:240] = (sin_50MHz + sin_2MHz) / 2;
+            s_tdata[239:224] = (sin_50MHz + sin_2MHz) / 2;
+            s_tdata[223:208] = (sin_50MHz + sin_2MHz) / 2;
+            s_tdata[207:192] = (sin_50MHz + sin_2MHz) / 2;
+            s_tdata[191:176] = (sin_50MHz + sin_2MHz) / 2;
+            s_tdata[175:160] = (sin_50MHz + sin_2MHz) / 2;
+            s_tdata[159:144] = (sin_50MHz + sin_2MHz) / 2;
+            s_tdata[143:128] = (sin_50MHz + sin_2MHz) / 2;
             
-            s_tdata[127:112] = (sin_2MHz + sin_30MHz) / 2;
-            s_tdata[111:96] = (sin_2MHz + sin_30MHz) / 2;
-            s_tdata[95:80] = (sin_2MHz + sin_30MHz) / 2;
-            s_tdata[79:64] = (sin_2MHz + sin_30MHz) / 2;
-            s_tdata[63:48] = (sin_2MHz + sin_30MHz) / 2;
-            s_tdata[47:32] = (sin_2MHz + sin_30MHz) / 2;
-            s_tdata[31:16] = (sin_2MHz + sin_30MHz) / 2;
-            s_tdata[15:0] = (sin_2MHz + sin_30MHz) / 2;
+            s_tdata[127:112] = (sin_50MHz + sin_2MHz) / 2;
+            s_tdata[111:96] = (sin_50MHz + sin_2MHz) / 2;
+            s_tdata[95:80] = (sin_50MHz + sin_2MHz) / 2;
+            s_tdata[79:64] = (sin_50MHz + sin_2MHz) / 2;
+            s_tdata[63:48] = (sin_50MHz + sin_2MHz) / 2;
+            s_tdata[47:32] = (sin_50MHz + sin_2MHz) / 2;
+            s_tdata[31:16] = (sin_50MHz + sin_2MHz) / 2;
+            s_tdata[15:0] = (sin_50MHz + sin_2MHz) / 2;
            end
            @(posedge clk);
            s_tdata <= '0;
@@ -203,16 +203,20 @@ module fir_tb;
 	
 	// Fill queues
 	always begin 
-	   if (xil_m_tvalid && (xil_m_tdata[31:16] != '0))
+	   if (xil_m_tvalid)
 	       expected_outputs.push_back($signed(xil_m_tdata));
 	   @(posedge clk);
 	   end
 	
 	always begin 
-	   if (m_tvalid && (m_tdata[31:16] != '0))
+	   if (m_tvalid)
           outputs.push_back($signed(m_tdata[31:16]));
       @(posedge clk);
       end
+      
+    // Visual debugging vectors
+    assign m_tdata_half = m_tdata[15:0];
+    assign xil_m_tdata_half = xil_m_tdata[15:0];
       
     task automatic check();
               logic signed [15:0] expected_data;

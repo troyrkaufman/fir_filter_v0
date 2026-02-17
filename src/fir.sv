@@ -4,20 +4,20 @@
 // Author: Troy Kaufman
 // Date: 11/05/2025
 // ----------------------------------------------------------------------------
-// Implements a 2-channel FIR filter with 8 parallel input samples per channel.
-// Each channel has its own 121-tap delay line. The filter coefficients are
+// Implements a 2-path FIR filter with 8 parallel input samples per path.
+// Each path has its own 121-tap delay line. The filter coefficients are
 // shared between both channels. Output is decimated by 8.
 // ============================================================================
 
 `timescale 1ns/1ps
 
-module fir_troy #(
+module fir #(
     parameter int TAP_COUNT   = 121,   // Number of taps
     parameter int DATA_WIDTH  = 16,    // Input sample width
     parameter int COEF_WIDTH  = 16,    // Coefficient width
     parameter int DECIM       = 8,     // Decimation rate
-    parameter int CHANNELS    = 2,     // Dual-channel input
-    parameter int P_SAMPLES   = 8      // Parallel samples per channel
+    parameter int CHANNELS    = 2,     // Dual-path input
+    parameter int P_SAMPLES   = 8      // Parallel samples per path
 )(
     input  logic                        clk,
     input  logic                        nrst,          // Active-low reset
@@ -33,7 +33,7 @@ module fir_troy #(
     logic pos_enable_fir, delay0;
     logic [2:0] decim_count;
 
-    // Delay lines for each channel
+    // Delay lines for each path
     logic signed [DATA_WIDTH-1:0] taps0 [0:TAP_COUNT-1];
     logic signed [DATA_WIDTH-1:0] taps1 [0:TAP_COUNT-1];
 
