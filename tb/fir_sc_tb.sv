@@ -1,11 +1,11 @@
 // ============================================================================
-// FIR Filter Testbench (Dual Channel, Decimation by 8)
+// FIR Filter Testbench (Dual Path, Decimation by 8)
 // Author: Troy Kaufman
 // Date: 11/07/2025
 // ----------------------------------------------------------------------------
-// Tests a 2 channel 8 lane 16 bit input decimation by 8 FIR filter. Inputs 
-// include impulses, steps, and sinusoids. A behavioral model was created to 
-// test the design against using the same inputs. 
+// Tests a 2 Path, 8 lane 16-bit input decimation by 8 FIR filter. Inputs 
+// include impulses, steps, and sinusoids. A golden reference model was created  
+// to test the design against using the same inputs. 
 // ============================================================================
 
 `timescale 1ns/1ps
@@ -53,7 +53,7 @@ module fir_sc_tb;
 	logic [CHANNELS*DW*PSAMPLES-1:0] s_tdata;
 	logic m_tvalid;
 	logic signed [31:0]     m_tdata;
-	logic signed               xil_s_tdata;
+	logic signed            xil_s_tdata;
 	logic signed [31:0]     xil_m_tdata;
 	
 	// Queues
@@ -77,7 +77,7 @@ module fir_sc_tb;
 		.m_tdata  (m_tdata)
 	);
 	
-	// create a 30 MHz sine wave
+	// Create a 2 MHz sine wave
 	cordic_0 cordic_inst_0(
 	   .aclk                   (cordic_clk),
 	   .s_axis_phase_tvalid    (phase_tvalid),
@@ -86,7 +86,7 @@ module fir_sc_tb;
 	   .m_axis_dout_tdata      ({sin_2MHz, cos_2MHz})
 	);
 	
-	
+	// Create a 50 MHz
 	cordic_0 cordic_inst_1(
            .aclk                   (cordic_clk),
            .s_axis_phase_tvalid    (phase_tvalid),
@@ -111,9 +111,6 @@ module fir_sc_tb;
 
 	// Coeffs loaded with same file as DUT
 	logic signed [15:0] coef  [0:TAP_COUNT-1];
-	// Input sequence (post-averaging notionally; we drive all channels the same)
-	//logic signed [15:0] x     [0:2047];       // enough headroom
-	
 	
 	task impulse();
 		@(posedge clk);
@@ -137,7 +134,6 @@ module fir_sc_tb;
 			s_tdata[255:240] <= (i < 16) ? '0 : 16'sh7fff;
 		@(posedge clk);
 		s_tdata <= '0;
-		//repeat (500) @(posedge clk);
 		s_tvalid <= 0;
 	endtask
 	
@@ -218,6 +214,7 @@ module fir_sc_tb;
     assign m_tdata_half = m_tdata[15:0];
     assign xil_m_tdata_half = xil_m_tdata[15:0];
       
+	// check lower 16-bit output values
     task automatic check();
               logic signed [15:0] expected_data;
               logic signed [15:0] received_data;
@@ -227,16 +224,14 @@ module fir_sc_tb;
                   received_data = outputs.pop_front();
           
                   if (received_data !== expected_data) begin
-                      $error("Time %0t: DATA MISMATCH! Expected %0d, Got %0d",
-                             $time, expected_data, received_data);
+                      $error("DATA MISMATCH! Expected %0d, Got %0d", expected_data, received_data);
                   end
                   else begin
-                      $display("Time %0t: DATA MATCH! Expected %0h, Got %0h",
-                               $time, expected_data, received_data);
+                      $display("DATA MATCH! Expected %0d, Got %0d", expected_data, received_data);
                   end
               end
               else begin
-                  $error("Time %0t: Received unexpected data! Expected queue is empty", $time);
+                  $error("Received unexpected data! Expected queue is empty");
               end
           endtask
 	
@@ -271,6 +266,13 @@ module fir_sc_tb;
 
 		$display("Simulation done.");
 		$finish;
+	end
+
+	// Add a timeout
+	always begin
+		#50_000_000; // 50ms
+		$error("Simulation didn't finish");
+		$stop;
 	end
 
 

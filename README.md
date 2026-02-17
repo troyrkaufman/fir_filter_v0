@@ -2,8 +2,8 @@
 
 ## Progress Update
 
-* Built selfchecking testbench for design
+* The custom behavioral FIR filter displays a similar behavior to the FIR Compiler's output the model is meant to replace. 
 
-* Built behavioral model of decimation by 8 FIR filter and compared this expected value to my design's output
+* The testbench attached uses impulse, step, and sinusoidal inputs to stimulate the design. 
 
-* The signs are the same, but the magnitudes differ by a bit. There is an error that ranges between 0.1 to 1.5%. 
+* In all tests, the average difference between the behavioral model and the Xilinx implementation is 2-3 signed decimal values out of 2^16 possibilites. 

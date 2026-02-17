@@ -1,6 +1,6 @@
 
 // ============================================================================
-// FIR Filter (Dual Channel, Decimation by 8)
+// FIR Filter (Dual Path, Decimation by 8)
 // Author: Troy Kaufman
 // Date: 11/05/2025
 // ----------------------------------------------------------------------------
@@ -30,8 +30,13 @@ module fir #(
 
     // Internal Signals
     logic enable_fir;
-    logic pos_enable_fir, delay0;
-    logic [2:0] decim_count;
+    logic signed [47:0] temp_acc0 = 0;
+    logic signed [47:0] temp_acc1 = 0;
+    logic signed [31:0] t_data_next;
+    logic signed [15:0] acc0;
+    logic signed [31:0] acc1;
+    
+    logic m_tvalid_next;
 
     // Delay lines for each path
     logic signed [DATA_WIDTH-1:0] taps0 [0:TAP_COUNT-1];
@@ -39,9 +44,6 @@ module fir #(
 
     // Shared coefficient memory
     logic signed [COEF_WIDTH-1:0] coeffs [0:TAP_COUNT-1];
-
-    // Accumulators
-    logic signed [47:0] acc0, acc1;
 
     // Load coefficients from file
     initial begin
@@ -79,52 +81,35 @@ module fir #(
             end
     end
     end
-
-    logic signed [47:0] temp_acc0 = 0;
-    logic signed [47:0] temp_acc1 = 0;
-
-    logic signed [31:0] debug_output;
-    logic signed [15:0] debug_acc1;
-    logic signed [31:0] debug_acc2;
     
-    logic signed [31:0] debug_debug;
-    logic m_tvalid_next;
-    
-    // Multiply-Accumulate (MAC) and Decimation
+    // MAC and Normalization Logic
     always_comb begin
         if (!nrst) begin
-            acc0        = '0;
-            acc1        = '0;
-            decim_count = '0;
-            m_tvalid_next    = 1'b0;
-            m_tdata     = '0;
-            debug_output = 0;
-            debug_acc1 = '0;
-            debug_acc2 = '0;
-            debug_debug = 0;
+            acc0            = '0;
+            acc1            = '0;
+            m_tvalid_next   = 1'b0;
+            m_tdata         = '0;
+            t_data_next     = 0;
         end 
-        else if (enable_fir) begin // can't be <= must be = 
-            temp_acc0 = '0;
-            temp_acc1 = '0;
+        else if (enable_fir) begin 
+            temp_acc0       = '0;
+            temp_acc1       = '0;
             for (int k = 0; k < TAP_COUNT; k++) begin
                 temp_acc0 = $signed(temp_acc0) + ($signed(taps0[k]) * $signed(coeffs[k]));
                 temp_acc1 = $signed(temp_acc1) + ($signed(taps1[k]) * $signed(coeffs[k]));
             end
-            
-            debug_acc1 = temp_acc0>>>19;
-            debug_acc2 = (temp_acc1>>>19)<<16;
-            debug_output = {debug_acc2[31:16], debug_acc1}; // real output signal
-            debug_debug = temp_acc0>>>14;
-
-            m_tvalid_next = 1;
+            acc0            = temp_acc0>>>19;
+            acc1            = (temp_acc1>>>19)<<16;
+            t_data_next     = {acc1[31:16], acc0}; 
+            m_tvalid_next   = 1;
        end else 
-            m_tvalid_next = 0;
+            m_tvalid_next   = 0;
     end
     
     logic [31:0] delay_tdata [0:65];
     logic [65:0] delay_tvalid;
     
-    // Shift registers to match Xilinx delay
+    // Shift registers to match Xilinx's FIR Compiler delay
     always_ff@(posedge clk) begin
         if (!nrst) begin
             for (int i = 0; i < 66; i++) begin
@@ -136,17 +121,19 @@ module fir #(
                 delay_tdata[i+1] <= delay_tdata[i];
             end
             
-            delay_tdata[0] <= debug_output;       
+            delay_tdata[0] <= t_data_next;       
             delay_tvalid <= {m_tvalid_next, delay_tvalid[65:1]};
         end
     end
     
+    // AXIS valid flag output
     assign m_tvalid = delay_tvalid[0];
     
+    // AXIS data output
     always_ff@(posedge clk) begin 
         if (!nrst) begin
             m_tdata <= '0;
-        end else if (m_tvalid && (delay_tvalid[1] && delay_tvalid[0])) begin 
+        end else if (m_tvalid && (delay_tvalid[1] && delay_tvalid[0])) begin // ensures the final output is consistent with Xilinx's implementation
             m_tdata <= delay_tdata[65];
         end
     
